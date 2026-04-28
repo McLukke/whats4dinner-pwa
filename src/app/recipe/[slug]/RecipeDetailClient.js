@@ -3,8 +3,52 @@
 import { useState } from "react";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import MediaGallery from "@/components/MediaGallery";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Users, Clock, Timer, ChefHat } from "lucide-react";
 import { useRouter } from "next/navigation";
+
+// ---------- quick info helpers ----------
+
+function fmtMinutes(mins) {
+  if (!mins) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
+function QuickInfoBar({ servings, prepTimeMinutes, cookTimeMinutes, totalTimeMinutes }) {
+  const totalMinutes =
+    totalTimeMinutes || (prepTimeMinutes || 0) + (cookTimeMinutes || 0) || null;
+
+  const items = [
+    { icon: Users,    label: "Serves", value: servings ? String(servings) : null },
+    { icon: Timer,    label: "Prep",   value: fmtMinutes(prepTimeMinutes) },
+    { icon: ChefHat,  label: "Cook",   value: fmtMinutes(cookTimeMinutes) },
+    { icon: Clock,    label: "Total",  value: fmtMinutes(totalMinutes) },
+  ].filter((i) => i.value);
+
+  if (!items.length) return null;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {items.map(({ icon: Icon, label, value }) => (
+        <div
+          key={label}
+          className="flex items-center gap-2 bg-white rounded-xl px-3 py-2.5 shadow-sm"
+        >
+          <Icon className="w-4 h-4 shrink-0 text-neutral-500" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 leading-none">
+              {label}
+            </p>
+            <p className="text-sm font-semibold text-neutral-900 leading-snug">{value}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ---------- ingredient helpers ----------
 
@@ -155,6 +199,13 @@ export default function RecipeDetailClient({ recipe }) {
           </p>
         )}
 
+        <QuickInfoBar
+          servings={recipe.servings}
+          prepTimeMinutes={recipe.prepTimeMinutes}
+          cookTimeMinutes={recipe.cookTimeMinutes}
+          totalTimeMinutes={recipe.totalTimeMinutes}
+        />
+
         {/* Processing fallback */}
         {isProcessing && (
           <p className="text-sm text-neutral-400 italic text-center py-8">
@@ -165,7 +216,7 @@ export default function RecipeDetailClient({ recipe }) {
         {/* Ingredients */}
         {hasIngredients && (
           <section>
-            <h2 className="text-lg font-semibold text-neutral-900 mb-3">Ingredients</h2>
+            <h2 className="text-xl font-bold text-neutral-900 mb-3">Ingredients</h2>
             <IngredientList
               ingredients={recipe.ingredients}
               crossed={crossed}
@@ -177,7 +228,7 @@ export default function RecipeDetailClient({ recipe }) {
         {/* Instructions */}
         {hasSteps && (
           <section>
-            <h2 className="text-lg font-semibold text-neutral-900 mb-3">Instructions</h2>
+            <h2 className="text-xl font-bold text-neutral-900 mb-3">Instructions</h2>
             <ol className="flex flex-col gap-5">
               {steps.map((step, i) => (
                 <li key={i} className="flex gap-4">

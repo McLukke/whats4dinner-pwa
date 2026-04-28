@@ -27,11 +27,41 @@ export default function SearchAndFilter() {
   const [loading, setLoading] = useState(false);
 
   const debounceRef = useRef(null);
+  const scrollSaveRef = useRef(null);
   // Refs hold the latest values so async callbacks never close over stale state
   const searchParamsRef = useRef(searchParams);
   const pathnameRef = useRef(pathname);
   searchParamsRef.current = searchParams;
   pathnameRef.current = pathname;
+
+  // Hand off scroll restoration to this component; prevent browser from clobbering it
+  useEffect(() => {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  }, []);
+
+  // Persist scroll Y to sessionStorage, keyed by the active search params string
+  useEffect(() => {
+    const save = () => {
+      clearTimeout(scrollSaveRef.current);
+      scrollSaveRef.current = setTimeout(() => {
+        const key = `scroll:${searchParamsRef.current.toString()}`;
+        sessionStorage.setItem(key, String(Math.round(window.scrollY)));
+      }, 150);
+    };
+    window.addEventListener('scroll', save, { passive: true });
+    return () => {
+      clearTimeout(scrollSaveRef.current);
+      window.removeEventListener('scroll', save);
+    };
+  }, []);
+
+  // After results render: restore saved position (Back nav) or reset to top (new search)
+  useEffect(() => {
+    if (!results) return;
+    const key = `scroll:${searchParamsRef.current.toString()}`;
+    const saved = sessionStorage.getItem(key);
+    window.scrollTo({ top: saved ? parseInt(saved, 10) : 0, behavior: 'instant' });
+  }, [results]);
 
   // Sync input field from URL — fires on Back navigation restoring ?q=
   useEffect(() => {

@@ -1,18 +1,7 @@
+import { Suspense } from "react";
 import SearchAndFilter from "@/components/SearchAndFilter";
-import { connectToDatabase } from "@/lib/mongodb";
-import Recipe from "@/models/Recipe";
 
-export const dynamic = "force-dynamic";
-
-async function getFreshPicks() {
-  await connectToDatabase();
-  const recipes = await Recipe.aggregate([{ $sample: { size: 12 } }]);
-  return JSON.parse(JSON.stringify(recipes));
-}
-
-export default async function HomePage() {
-  const recipes = await getFreshPicks();
-
+export default function HomePage() {
   return (
     <main className="min-h-screen bg-[#f8f9fa]">
       <header className="sticky top-0 z-10 bg-[#f8f9fa] border-b border-neutral-200 px-4 pt-4 pb-3">
@@ -23,7 +12,9 @@ export default async function HomePage() {
       </header>
 
       <div className="px-4 pt-4 pb-8 max-w-lg mx-auto">
-        <SearchAndFilter initialRecipes={recipes} />
+        <Suspense>
+          <SearchAndFilter />
+        </Suspense>
       </div>
     </main>
   );

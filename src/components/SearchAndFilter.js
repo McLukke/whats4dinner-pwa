@@ -1,56 +1,123 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Search, X, Zap } from "lucide-react";
 import RecipeCard from "./RecipeCard";
 
 const CUISINES = ["Chinese", "Korean", "Taiwanese", "Japanese", "Thai", "Vietnamese"];
 
-export default function SearchAndFilter({ initialRecipes }) {
-  const [query, setQuery] = useState("");
-  const [activeCuisines, setActiveCuisines] = useState(new Set());
-  const [quickFilter, setQuickFilter] = useState(false);
+export default function SearchAndFilter() {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const urlQ = searchParams.get("q") ?? "";
+  const urlFilter = searchParams.get("filter") ?? "";
+  const urlQuick = searchParams.get("quick") === "true";
+  const isActive = Boolean(urlQ || urlFilter || urlQuick);
+
+  const activeCuisines = new Set(
+    urlFilter ? urlFilter.split(",").map((c) => c.trim()).filter(Boolean) : []
+  );
+
+  const [inputValue, setInputValue] = useState(urlQ);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
+
   const debounceRef = useRef(null);
+  // Refs hold the latest values so async callbacks never close over stale state
+  const searchParamsRef = useRef(searchParams);
+  const pathnameRef = useRef(pathname);
+  searchParamsRef.current = searchParams;
+  pathnameRef.current = pathname;
 
-  const isFiltering = Boolean(query.trim() || activeCuisines.size > 0 || quickFilter);
-  const displayed = isFiltering ? (results ?? []) : initialRecipes;
-
-  const toggleCuisine = (c) => {
-    setActiveCuisines((prev) => {
-      const next = new Set(prev);
-      if (next.has(c)) next.delete(c);
-      else next.add(c);
-      return next;
-    });
-  };
-
+  // Sync input field from URL — fires on Back navigation restoring ?q=
   useEffect(() => {
-    if (!isFiltering) {
+    setInputValue(searchParams.get("q") ?? "");
+  }, [searchParams]);
+
+  // Debounce: update ?q= in URL 300ms after the user stops typing
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const sp = searchParamsRef.current;
+      const pn = pathnameRef.current;
+      const trimmed = inputValue.trim();
+      if (trimmed === (sp.get("q") ?? "")) return;
+      const next = new URLSearchParams(sp.toString());
+      if (trimmed) next.set("q", trimmed);
+      else next.delete("q");
+      const qs = next.toString();
+      router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+    // router is stable; searchParams/pathname read from refs to avoid stale closures
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputValue]);
+
+  // Fetch whenever URL search params change
+  useEffect(() => {
+    const q = searchParams.get("q")?.trim();
+    const filter = searchParams.get("filter");
+    const quick = searchParams.get("quick") === "true";
+
+    if (!q && !filter && !quick) {
       setResults(null);
+      setLoading(false);
       return;
     }
 
+    let cancelled = false;
     setLoading(true);
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams();
-        if (query.trim()) params.set("q", query.trim());
-        if (activeCuisines.size > 0) params.set("cuisine", [...activeCuisines].join(","));
-        if (quickFilter) params.set("quick", "true");
 
-        const res = await fetch(`/api/search?${params}`);
-        const data = await res.json();
-        setResults(data);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (filter) params.set("cuisine", filter);
+    if (quick) params.set("quick", "true");
 
-    return () => clearTimeout(debounceRef.current);
-  }, [query, activeCuisines, quickFilter, isFiltering]);
+    fetch(`/api/search?${params}`)
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) { setResults(data); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [searchParams]);
+
+  const toggleCuisine = useCallback((c) => {
+    const sp = searchParamsRef.current;
+    const pn = pathnameRef.current;
+    const current = sp.get("filter") ?? "";
+    const set = new Set(current ? current.split(",").map((x) => x.trim()).filter(Boolean) : []);
+    if (set.has(c)) set.delete(c);
+    else set.add(c);
+    const next = new URLSearchParams(sp.toString());
+    const filterStr = [...set].join(",");
+    if (filterStr) next.set("filter", filterStr);
+    else next.delete("filter");
+    const qs = next.toString();
+    router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
+  }, [router]);
+
+  const toggleQuick = useCallback(() => {
+    const sp = searchParamsRef.current;
+    const pn = pathnameRef.current;
+    const next = new URLSearchParams(sp.toString());
+    if (sp.get("quick") === "true") next.delete("quick");
+    else next.set("quick", "true");
+    const qs = next.toString();
+    router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
+  }, [router]);
+
+  const clearSearch = useCallback(() => {
+    setInputValue("");
+    const sp = searchParamsRef.current;
+    const pn = pathnameRef.current;
+    const next = new URLSearchParams(sp.toString());
+    next.delete("q");
+    const qs = next.toString();
+    router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
+  }, [router]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -59,8 +126,8 @@ export default function SearchAndFilter({ initialRecipes }) {
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
         <input
           type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
           placeholder="Search by dish or ingredient…"
           autoComplete="off"
           autoCorrect="off"
@@ -68,9 +135,9 @@ export default function SearchAndFilter({ initialRecipes }) {
           spellCheck={false}
           className="w-full pl-10 pr-10 py-3 rounded-2xl border border-neutral-200 bg-white text-sm text-neutral-900 placeholder:text-neutral-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-800/25 transition [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
         />
-        {query && (
+        {inputValue && (
           <button
-            onClick={() => setQuery("")}
+            onClick={clearSearch}
             className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-neutral-100 transition"
             aria-label="Clear search"
           >
@@ -95,9 +162,9 @@ export default function SearchAndFilter({ initialRecipes }) {
           </button>
         ))}
         <button
-          onClick={() => setQuickFilter((v) => !v)}
+          onClick={toggleQuick}
           className={`shrink-0 flex items-center gap-1 text-xs font-semibold px-3.5 py-1.5 rounded-full border transition-colors ${
-            quickFilter
+            urlQuick
               ? "bg-green-600 border-green-600 text-white"
               : "bg-white border-neutral-200 text-neutral-600 active:bg-neutral-50"
           }`}
@@ -107,26 +174,25 @@ export default function SearchAndFilter({ initialRecipes }) {
         </button>
       </div>
 
-      {/* Section label */}
-      {!isFiltering && (
-        <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 px-1 mt-1">
-          Fresh Picks
-        </p>
-      )}
+      {/* Results area */}
+      <div className="flex flex-col gap-4 mt-1">
+        {!isActive && (
+          <p className="text-center text-sm text-neutral-400 py-12">
+            Search for a recipe to begin
+          </p>
+        )}
 
-      {/* Recipe list */}
-      <div className="flex flex-col gap-4">
-        {loading && (
+        {isActive && loading && (
           <p className="text-center text-sm text-neutral-400 py-12">Searching…</p>
         )}
 
-        {!loading && isFiltering && results?.length === 0 && (
+        {isActive && !loading && results?.length === 0 && (
           <p className="text-center text-sm text-neutral-400 py-12">
             Nothing in the fridge matches that — try adding more ingredients!
           </p>
         )}
 
-        {!loading && displayed.map((recipe) => (
+        {isActive && !loading && results?.map((recipe) => (
           <RecipeCard key={recipe._id} recipe={recipe} />
         ))}
       </div>

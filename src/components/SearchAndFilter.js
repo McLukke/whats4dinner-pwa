@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { Search, X, Zap } from "lucide-react";
+import { Search, X, Zap, Heart } from "lucide-react";
+import { useSession } from "next-auth/react";
 import RecipeCard from "./RecipeCard";
+import { useFavorites } from "@/hooks/useFavorites";
 
 const CUISINES = ["Chinese", "Korean", "Taiwanese", "Japanese", "Thai", "Vietnamese"];
 
@@ -11,12 +13,14 @@ export default function SearchAndFilter() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const { data: session } = useSession();
 
   const urlQ = searchParams.get("q") ?? "";
   const urlFilter = searchParams.get("filter") ?? "";
   const urlQuick = searchParams.get("quick") === "true";
   const urlBaking = searchParams.get("baking") === "true";
-  const isActive = Boolean(urlQ || urlFilter || urlQuick || urlBaking);
+  const urlFavorites = searchParams.get("favorites") === "true";
+  const isActive = Boolean(urlQ || urlFilter || urlQuick || urlBaking || urlFavorites);
 
   const activeCuisines = new Set(
     urlFilter ? urlFilter.split(",").map((c) => c.trim()).filter(Boolean) : []
@@ -26,20 +30,19 @@ export default function SearchAndFilter() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const { isFavorited, toggle: toggleFavorite, isSignedIn } = useFavorites();
+
   const debounceRef = useRef(null);
   const scrollSaveRef = useRef(null);
-  // Refs hold the latest values so async callbacks never close over stale state
   const searchParamsRef = useRef(searchParams);
   const pathnameRef = useRef(pathname);
   searchParamsRef.current = searchParams;
   pathnameRef.current = pathname;
 
-  // Hand off scroll restoration to this component; prevent browser from clobbering it
   useEffect(() => {
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   }, []);
 
-  // Persist scroll Y to sessionStorage, keyed by the active search params string
   useEffect(() => {
     const save = () => {
       clearTimeout(scrollSaveRef.current);
@@ -55,7 +58,6 @@ export default function SearchAndFilter() {
     };
   }, []);
 
-  // After results render: restore saved position (Back nav) or reset to top (new search)
   useEffect(() => {
     if (!results) return;
     const key = `scroll:${searchParamsRef.current.toString()}`;
@@ -63,12 +65,10 @@ export default function SearchAndFilter() {
     window.scrollTo({ top: saved ? parseInt(saved, 10) : 0, behavior: 'instant' });
   }, [results]);
 
-  // Sync input field from URL — fires on Back navigation restoring ?q=
   useEffect(() => {
     setInputValue(searchParams.get("q") ?? "");
   }, [searchParams]);
 
-  // Debounce: update ?q= in URL 300ms after the user stops typing
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -83,18 +83,17 @@ export default function SearchAndFilter() {
       router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
     }, 300);
     return () => clearTimeout(debounceRef.current);
-    // router is stable; searchParams/pathname read from refs to avoid stale closures
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputValue]);
 
-  // Fetch whenever URL search params change
   useEffect(() => {
     const q = searchParams.get("q")?.trim();
     const filter = searchParams.get("filter");
     const quick = searchParams.get("quick") === "true";
     const baking = searchParams.get("baking") === "true";
+    const favorites = searchParams.get("favorites") === "true";
 
-    if (!q && !filter && !quick && !baking) {
+    if (!q && !filter && !quick && !baking && !favorites) {
       setResults(null);
       setLoading(false);
       return;
@@ -103,17 +102,23 @@ export default function SearchAndFilter() {
     let cancelled = false;
     setLoading(true);
 
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    if (filter) params.set("cuisine", filter);
-    if (quick) params.set("quick", "true");
-    // Always send baking so the API applies the correct tag filter
-    params.set("baking", baking ? "true" : "false");
+    if (favorites) {
+      fetch("/api/favorites")
+        .then((r) => r.json())
+        .then((data) => { if (!cancelled) { setResults(data); setLoading(false); } })
+        .catch(() => { if (!cancelled) setLoading(false); });
+    } else {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (filter) params.set("cuisine", filter);
+      if (quick) params.set("quick", "true");
+      params.set("baking", baking ? "true" : "false");
 
-    fetch(`/api/search?${params}`)
-      .then((r) => r.json())
-      .then((data) => { if (!cancelled) { setResults(data); setLoading(false); } })
-      .catch(() => { if (!cancelled) setLoading(false); });
+      fetch(`/api/search?${params}`)
+        .then((r) => r.json())
+        .then((data) => { if (!cancelled) { setResults(data); setLoading(false); } })
+        .catch(() => { if (!cancelled) setLoading(false); });
+    }
 
     return () => { cancelled = true; };
   }, [searchParams]);
@@ -149,6 +154,16 @@ export default function SearchAndFilter() {
     const next = new URLSearchParams(sp.toString());
     if (sp.get("baking") === "true") next.delete("baking");
     else next.set("baking", "true");
+    const qs = next.toString();
+    router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
+  }, [router]);
+
+  const toggleFavoritesFilter = useCallback(() => {
+    const sp = searchParamsRef.current;
+    const pn = pathnameRef.current;
+    const next = new URLSearchParams(sp.toString());
+    if (sp.get("favorites") === "true") next.delete("favorites");
+    else next.set("favorites", "true");
     const qs = next.toString();
     router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
   }, [router]);
@@ -192,7 +207,7 @@ export default function SearchAndFilter() {
 
       {/* Filter pills */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 -mx-4 px-4">
-        {/* Baking mode toggle — visually separated as a mode switch */}
+        {/* Baking mode toggle */}
         <button
           onClick={toggleBaking}
           className={`shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-full border transition-colors ${
@@ -228,6 +243,19 @@ export default function SearchAndFilter() {
           <Zap className="w-3 h-3" />
           &lt; 20 Mins
         </button>
+        {isSignedIn && (
+          <button
+            onClick={toggleFavoritesFilter}
+            className={`shrink-0 flex items-center gap-1 text-xs font-semibold px-3.5 py-1.5 rounded-full border transition-colors ${
+              urlFavorites
+                ? "bg-rose-500 border-rose-500 text-white"
+                : "bg-white border-neutral-200 text-neutral-600 active:bg-neutral-50"
+            }`}
+          >
+            <Heart className={`w-3 h-3 ${urlFavorites ? "fill-white" : ""}`} />
+            Favorites
+          </button>
+        )}
       </div>
 
       {/* Results area */}
@@ -244,12 +272,19 @@ export default function SearchAndFilter() {
 
         {isActive && !loading && results?.length === 0 && (
           <p className="text-center text-sm text-neutral-400 py-12">
-            Nothing in the fridge matches that — try adding more ingredients!
+            {urlFavorites
+              ? "No favorites yet — heart a recipe to save it here."
+              : "Nothing in the fridge matches that — try adding more ingredients!"}
           </p>
         )}
 
         {isActive && !loading && results?.map((recipe) => (
-          <RecipeCard key={recipe._id} recipe={recipe} />
+          <RecipeCard
+            key={recipe._id}
+            recipe={recipe}
+            isFavorited={isFavorited(recipe._id)}
+            onToggleFavorite={isSignedIn ? toggleFavorite : undefined}
+          />
         ))}
       </div>
     </div>

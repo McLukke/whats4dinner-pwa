@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import MediaGallery from "@/components/MediaGallery";
-import { ArrowLeft, Check, Users, Clock, Timer, ChefHat } from "lucide-react";
+import { ArrowLeft, Check, Users, Clock, Timer, ChefHat, Heart } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useFavorites } from "@/hooks/useFavorites";
 
 // ---------- quick info helpers ----------
 
@@ -134,6 +135,8 @@ export default function RecipeDetailClient({ recipe }) {
   useWakeLock(true);
   const router = useRouter();
   const [crossed, setCrossed] = useState(new Set());
+  const { isFavorited, toggle: toggleFavorite, isSignedIn } = useFavorites();
+  const recipeId = String(recipe._id);
 
   const toggleIngredient = (i) => {
     setCrossed((prev) => {
@@ -164,7 +167,7 @@ export default function RecipeDetailClient({ recipe }) {
         >
           <ArrowLeft className="w-6 h-6 text-neutral-700" />
         </button>
-        <div className="flex flex-col min-w-0">
+        <div className="flex flex-col min-w-0 flex-1">
           <h1 className="text-lg font-bold text-neutral-900 leading-tight line-clamp-1">
             {recipe.title}
           </h1>
@@ -174,6 +177,19 @@ export default function RecipeDetailClient({ recipe }) {
             </span>
           )}
         </div>
+        {isSignedIn && (
+          <button
+            onClick={() => toggleFavorite(recipeId)}
+            className="p-2 -mr-1 rounded-xl active:bg-neutral-200 transition-colors"
+            aria-label={isFavorited(recipeId) ? "Remove from favorites" : "Add to favorites"}
+          >
+            <Heart
+              className={`w-6 h-6 transition-colors ${
+                isFavorited(recipeId) ? "fill-rose-500 text-rose-500" : "text-neutral-400"
+              }`}
+            />
+          </button>
+        )}
       </header>
 
       <div className="pt-4 px-4 max-w-lg mx-auto flex flex-col gap-5">

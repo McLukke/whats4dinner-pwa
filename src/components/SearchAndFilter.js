@@ -15,7 +15,8 @@ export default function SearchAndFilter() {
   const urlQ = searchParams.get("q") ?? "";
   const urlFilter = searchParams.get("filter") ?? "";
   const urlQuick = searchParams.get("quick") === "true";
-  const isActive = Boolean(urlQ || urlFilter || urlQuick);
+  const urlBaking = searchParams.get("baking") === "true";
+  const isActive = Boolean(urlQ || urlFilter || urlQuick || urlBaking);
 
   const activeCuisines = new Set(
     urlFilter ? urlFilter.split(",").map((c) => c.trim()).filter(Boolean) : []
@@ -61,8 +62,9 @@ export default function SearchAndFilter() {
     const q = searchParams.get("q")?.trim();
     const filter = searchParams.get("filter");
     const quick = searchParams.get("quick") === "true";
+    const baking = searchParams.get("baking") === "true";
 
-    if (!q && !filter && !quick) {
+    if (!q && !filter && !quick && !baking) {
       setResults(null);
       setLoading(false);
       return;
@@ -75,6 +77,8 @@ export default function SearchAndFilter() {
     if (q) params.set("q", q);
     if (filter) params.set("cuisine", filter);
     if (quick) params.set("quick", "true");
+    // Always send baking so the API applies the correct tag filter
+    params.set("baking", baking ? "true" : "false");
 
     fetch(`/api/search?${params}`)
       .then((r) => r.json())
@@ -105,6 +109,16 @@ export default function SearchAndFilter() {
     const next = new URLSearchParams(sp.toString());
     if (sp.get("quick") === "true") next.delete("quick");
     else next.set("quick", "true");
+    const qs = next.toString();
+    router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
+  }, [router]);
+
+  const toggleBaking = useCallback(() => {
+    const sp = searchParamsRef.current;
+    const pn = pathnameRef.current;
+    const next = new URLSearchParams(sp.toString());
+    if (sp.get("baking") === "true") next.delete("baking");
+    else next.set("baking", "true");
     const qs = next.toString();
     router.replace(qs ? `${pn}?${qs}` : pn, { scroll: false });
   }, [router]);
@@ -148,6 +162,18 @@ export default function SearchAndFilter() {
 
       {/* Filter pills */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 -mx-4 px-4">
+        {/* Baking mode toggle — visually separated as a mode switch */}
+        <button
+          onClick={toggleBaking}
+          className={`shrink-0 text-xs font-semibold px-3.5 py-1.5 rounded-full border transition-colors ${
+            urlBaking
+              ? "bg-amber-800 border-amber-800 text-white"
+              : "bg-white border-neutral-300 text-neutral-500 active:bg-neutral-50"
+          }`}
+        >
+          Baking
+        </button>
+        <span className="shrink-0 self-center w-px h-4 bg-neutral-200" aria-hidden="true" />
         {CUISINES.map((c) => (
           <button
             key={c}

@@ -7,6 +7,7 @@ export async function GET(request) {
   const q = searchParams.get("q")?.trim();
   const cuisine = searchParams.get("cuisine")?.trim();
   const quick = searchParams.get("quick") === "true";
+  const baking = searchParams.get("baking") === "true";
 
   await connectToDatabase();
 
@@ -32,6 +33,9 @@ export async function GET(request) {
   if (quick) {
     filter.cookTimeMinutes = { $lt: 20 };
   }
+
+  // Baking mode: isolate or exclude the Baking tag unconditionally
+  filter.tags = baking ? /^Baking$/i : { $not: /^Baking$/i };
 
   const recipes = await Recipe.find(filter)
     .sort({ createdAt: -1 })
